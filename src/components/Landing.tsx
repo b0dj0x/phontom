@@ -56,7 +56,7 @@ export default function Landing({
 
   useEffect(() => {
     if (manualOffer) {
-      QRCode.toDataURL(manualOffer, { width: 200, margin: 1, color: { dark: '#00f0ff', light: '#03060900' } })
+      QRCode.toDataURL(manualOffer, { width: 300, margin: 4, color: { dark: '#00f0ff', light: '#030609' } })
         .then(setOfferQr)
         .catch(() => {})
     } else {
@@ -66,7 +66,7 @@ export default function Landing({
 
   useEffect(() => {
     if (manualAnswer) {
-      QRCode.toDataURL(manualAnswer, { width: 200, margin: 1, color: { dark: '#7b61ff', light: '#03060900' } })
+      QRCode.toDataURL(manualAnswer, { width: 300, margin: 4, color: { dark: '#7b61ff', light: '#030609' } })
         .then(setAnswerQr)
         .catch(() => {})
     } else {
