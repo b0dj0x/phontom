@@ -22,7 +22,7 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
 
   useEffect(() => {
     let cancelled = false
-    const useNative = 'BarcodeDetector' in window
+    const hasBarcodeDetector = 'BarcodeDetector' in window
 
     async function start() {
       try {
@@ -44,41 +44,41 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
         async function scan() {
           if (cancelled || scannedRef.current) return
           if (video.readyState < video.HAVE_CURRENT_DATA || video.videoWidth === 0) {
-            timerRef.current = window.setTimeout(scan, 400)
+            timerRef.current = window.setTimeout(scan, 500)
             return
           }
 
-          try {
-            if (useNative) {
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          ctx.drawImage(video, 0, 0)
+
+          let found: string | null = null
+
+          if (hasBarcodeDetector) {
+            try {
               const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-              const barcodes = await detector.detect(video)
-              if (barcodes.length > 0) {
-                scannedRef.current = true
-                onScanRef.current(barcodes[0].rawValue)
-                return
-              }
-            } else {
-              const bitmap = await createImageBitmap(video, {
-                resizeWidth: Math.min(video.videoWidth, 640),
-                resizeHeight: Math.min(video.videoHeight, 480),
-                resizeQuality: 'medium',
-              })
-              canvas.width = bitmap.width
-              canvas.height = bitmap.height
-              ctx.drawImage(bitmap, 0, 0)
-              bitmap.close()
+              const barcodes = await detector.detect(canvas)
+              if (barcodes.length > 0) found = barcodes[0].rawValue
+            } catch {}
+          }
+
+          if (!found) {
+            try {
               const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
               const code = jsQR(imageData.data, imageData.width, imageData.height, {
                 inversionAttempts: 'attemptBoth',
               })
-              if (code) {
-                scannedRef.current = true
-                onScanRef.current(code.data)
-                return
-              }
-            }
-          } catch {}
-          timerRef.current = window.setTimeout(scan, 400)
+              if (code) found = code.data
+            } catch {}
+          }
+
+          if (found) {
+            scannedRef.current = true
+            onScanRef.current(found)
+            return
+          }
+
+          timerRef.current = window.setTimeout(scan, 500)
         }
         scan()
       } catch (err: any) {
@@ -99,41 +99,39 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
-    try {
-      if ('BarcodeDetector' in window) {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    canvas.width = video.videoWidth || 640
+    canvas.height = video.videoHeight || 480
+    ctx.drawImage(video, 0, 0)
+
+    let found: string | null = null
+
+    if ('BarcodeDetector' in window) {
+      try {
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-        const barcodes = await detector.detect(video)
-        if (barcodes.length > 0) {
-          scannedRef.current = true
-          onScanRef.current(barcodes[0].rawValue)
-          return
-        }
-      }
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      const bitmap = await createImageBitmap(video, {
-        resizeWidth: Math.min(video.videoWidth || 640, 640),
-        resizeHeight: Math.min(video.videoHeight || 480, 480),
-        resizeQuality: 'medium',
-      })
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
-      ctx.drawImage(bitmap, 0, 0)
-      bitmap.close()
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'attemptBoth',
-      })
-      if (code) {
-        scannedRef.current = true
-        onScanRef.current(code.data)
-      } else {
-        setFeedback('no-qr')
-        setTimeout(() => setFeedback(''), 1500)
-      }
-    } catch {
+        const barcodes = await detector.detect(canvas)
+        if (barcodes.length > 0) found = barcodes[0].rawValue
+      } catch {}
+    }
+
+    if (!found) {
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
+        })
+        if (code) found = code.data
+      } catch {}
+    }
+
+    if (found) {
+      scannedRef.current = true
+      onScanRef.current(found)
+    } else {
       setFeedback('no-qr')
-      setTimeout(() => setFeedback(''), 1500)
+      setTimeout(() => setFeedback(''), 2000)
     }
   }
 
@@ -166,7 +164,7 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
               )}
               {feedback === 'no-qr' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-amber-500/20">
-                  <span className="text-amber-400 text-sm font-mono">No QR found, try again</span>
+                  <span className="text-amber-400 text-sm font-mono">No QR found, tap again</span>
                 </div>
               )}
               <div className="absolute bottom-0 inset-x-0 p-3 text-center bg-gradient-to-t from-black/80 to-transparent">
