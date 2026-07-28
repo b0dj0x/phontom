@@ -9,22 +9,16 @@ interface QrScannerProps {
 
 export default function QrScanner({ onScan, onClose }: QrScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const scannedRef = useRef(false)
   const onScanRef = useRef(onScan)
   onScanRef.current = onScan
-  const timerRef = useRef(0)
 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [feedback, setFeedback] = useState('')
-  const [hasNative, setHasNative] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    const nativeAvailable = 'BarcodeDetector' in window
-    setHasNative(nativeAvailable)
 
     async function start() {
       try {
@@ -39,57 +33,6 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
         await video.play()
         if (cancelled) return
         setLoading(false)
-
-        const canvas = canvasRef.current!
-        const ctx = canvas.getContext('2d')!
-
-        let nativeDetector: any = null
-        if (nativeAvailable) {
-          try {
-            nativeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-          } catch {}
-        }
-
-        async function scan() {
-          if (cancelled || scannedRef.current) return
-          if (video.readyState < video.HAVE_CURRENT_DATA || video.videoWidth === 0) {
-            timerRef.current = window.setTimeout(scan, 500)
-            return
-          }
-
-          let found: string | null = null
-
-          // Method 1: Native BarcodeDetector on video element (hardware accelerated)
-          if (nativeDetector) {
-            try {
-              const barcodes = await nativeDetector.detect(video)
-              if (barcodes.length > 0) found = barcodes[0].rawValue
-            } catch {}
-          }
-
-          // Method 2: jsQR on canvas (software fallback)
-          if (!found) {
-            try {
-              canvas.width = video.videoWidth
-              canvas.height = video.videoHeight
-              ctx.drawImage(video, 0, 0)
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-              const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: 'attemptBoth',
-              })
-              if (code) found = code.data
-            } catch {}
-          }
-
-          if (found) {
-            scannedRef.current = true
-            onScanRef.current(found)
-            return
-          }
-
-          timerRef.current = window.setTimeout(scan, 500)
-        }
-        scan()
       } catch (err: any) {
         if (!cancelled) setError(err?.toString() || 'Camera access denied')
       }
@@ -98,50 +41,68 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
 
     return () => {
       cancelled = true
-      clearTimeout(timerRef.current)
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
     }
   }, [])
 
-  async function capture() {
-    if (scannedRef.current) return
+  async function decodeFrame(): Promise<string | null> {
     const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
+    if (!video || video.videoWidth === 0) return null
 
-    let found: string | null = null
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (!track) return null
 
-    if (hasNative) {
+    // Try ImageCapture API first (most reliable on Android)
+    if ('ImageCapture' in window) {
       try {
-        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-        const barcodes = await detector.detect(video)
-        if (barcodes.length > 0) found = barcodes[0].rawValue
-      } catch {}
-    }
-
-    if (!found) {
-      try {
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-        canvas.width = video.videoWidth || 640
-        canvas.height = video.videoHeight || 480
-        ctx.drawImage(video, 0, 0)
+        const capture = new (window as any).ImageCapture(track)
+        const bitmap = await capture.grabFrame()
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(bitmap, 0, 0)
+        bitmap.close()
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const code = jsQR(imageData.data, imageData.width, imageData.height, {
           inversionAttempts: 'attemptBoth',
         })
-        if (code) found = code.data
+        if (code) return code.data
       } catch {}
     }
 
-    if (found) {
+    // Fallback: try drawing video frame to canvas
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(video, 0, 0)
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'attemptBoth',
+      })
+      if (code) return code.data
+    } catch {}
+
+    return null
+  }
+
+  async function scan() {
+    if (scannedRef.current) return
+    const result = await decodeFrame()
+    if (result) {
       scannedRef.current = true
-      onScanRef.current(found)
-    } else {
-      setFeedback('no-qr')
-      setTimeout(() => setFeedback(''), 2000)
+      onScanRef.current(result)
     }
   }
+
+  // Auto-scan every second using ImageCapture
+  useEffect(() => {
+    if (loading || error) return
+    const interval = setInterval(() => { scan() }, 1000)
+    return () => clearInterval(interval)
+  }, [loading, error])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#030609]/90 backdrop-blur-sm">
@@ -170,25 +131,17 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
                   <span className="text-zinc-400 text-xs font-mono animate-pulse">Starting camera...</span>
                 </div>
               )}
-              {feedback === 'no-qr' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-amber-500/20">
-                  <span className="text-amber-400 text-sm font-mono">No QR found, tap again</span>
-                </div>
-              )}
               <div className="absolute bottom-0 inset-x-0 p-3 text-center bg-gradient-to-t from-black/80 to-transparent bg-black/60">
                 <Camera className="w-3.5 h-3.5 inline-block mr-1.5 text-zinc-500" />
-                <span className="text-zinc-400 text-xs font-mono">
-                  {hasNative ? 'Auto-scanning...' : 'Point camera at QR code'}
-                </span>
+                <span className="text-zinc-400 text-xs font-mono">Point camera at QR code</span>
               </div>
-              <canvas ref={canvasRef} className="hidden" />
             </div>
           )}
         </div>
-        {!error && !scannedRef.current && (
+        {!error && !loading && !scannedRef.current && (
           <button
-            onClick={capture}
-            className="mt-3 w-full py-3 rounded-xl bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 text-zinc-300 font-mono text-xs font-semibold tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-2"
+            onClick={scan}
+            className="mt-3 w-full py-3 rounded-xl bg-[#00f0ff] hover:bg-[#00d4e6] text-[#030609] font-mono font-bold text-sm tracking-wider uppercase shadow-[0_0_20px_rgba(0,240,255,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
           >
             <Scan className="w-4 h-4" />
             Tap to Scan
