@@ -56,7 +56,7 @@ export default function Landing({
 
   useEffect(() => {
     if (manualOffer) {
-      QRCode.toDataURL(manualOffer, { width: 300, margin: 4, color: { dark: '#00f0ff', light: '#030609' } })
+      QRCode.toDataURL(manualOffer, { width: 400, margin: 4, color: { dark: '#00bdda', light: '#14181f' } })
         .then(setOfferQr)
         .catch(() => {})
     } else {
@@ -66,7 +66,7 @@ export default function Landing({
 
   useEffect(() => {
     if (manualAnswer) {
-      QRCode.toDataURL(manualAnswer, { width: 300, margin: 4, color: { dark: '#7b61ff', light: '#030609' } })
+      QRCode.toDataURL(manualAnswer, { width: 400, margin: 4, color: { dark: '#7b61ff', light: '#14181f' } })
         .then(setAnswerQr)
         .catch(() => {})
     } else {
@@ -284,10 +284,10 @@ export default function Landing({
                           </div>
                         </div>
 
-                        <div className="flex justify-center">
+                          <div className="flex justify-center">
                           {offerQr && (
-                            <div className="bg-white/5 border border-zinc-800 rounded-xl p-3">
-                              <img src={offerQr} alt="QR code" className="w-32 h-32 sm:w-36 sm:h-36" />
+                            <div className="bg-[#14181f] border border-zinc-700/50 rounded-xl p-2">
+                              <img src={offerQr} alt="QR code" className="w-44 h-44 sm:w-52 sm:h-52" />
                             </div>
                           )}
                         </div>
@@ -356,8 +356,8 @@ export default function Landing({
                         </div>
                         <div className="flex justify-center">
                           {answerQr && (
-                            <div className="bg-white/5 border border-zinc-800 rounded-xl p-3">
-                              <img src={answerQr} alt="QR code" className="w-32 h-32 sm:w-36 sm:h-36" />
+                            <div className="bg-[#14181f] border border-zinc-700/50 rounded-xl p-2">
+                              <img src={answerQr} alt="QR code" className="w-44 h-44 sm:w-52 sm:h-52" />
                             </div>
                           )}
                         </div>
@@ -466,8 +466,8 @@ export default function Landing({
                         </div>
                         <div className="flex justify-center">
                           {answerQr && (
-                            <div className="bg-white/5 border border-zinc-800 rounded-xl p-3">
-                              <img src={answerQr} alt="QR code" className="w-32 h-32 sm:w-36 sm:h-36" />
+                            <div className="bg-[#14181f] border border-zinc-700/50 rounded-xl p-2">
+                              <img src={answerQr} alt="QR code" className="w-44 h-44 sm:w-52 sm:h-52" />
                             </div>
                           )}
                         </div>
