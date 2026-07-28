@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import jsQR from 'jsqr'
-import { X, CameraOff } from 'lucide-react'
+import { X, CameraOff, Camera } from 'lucide-react'
 
 interface QrScannerProps {
   onScan: (data: string) => void
@@ -11,16 +11,18 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const rafRef = useRef(0)
+  const timerRef = useRef(0)
   const scannedRef = useRef(false)
+  const onScanRef = useRef(onScan)
+  onScanRef.current = onScan
+
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    const supportsBarcodeDetector = 'BarcodeDetector' in window
 
-    ;(async () => {
+    async function start() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 720 } },
@@ -31,59 +33,41 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
         const video = videoRef.current!
         video.srcObject = stream
         await video.play()
+        if (cancelled) return
         setLoading(false)
 
-        if (supportsBarcodeDetector) {
-          const detector = new (window as any).BarcodeDetector({
-            formats: ['qr_code'],
-          })
-          ;(async function scanWithDetector() {
-            while (!cancelled && !scannedRef.current) {
-              if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                try {
-                  const barcodes = await detector.detect(video)
-                  if (barcodes.length > 0 && !scannedRef.current) {
-                    scannedRef.current = true
-                    onScan(barcodes[0].rawValue)
-                    return
-                  }
-                } catch {}
-              }
-              await new Promise(r => requestAnimationFrame(r))
-            }
-          })()
-        } else {
-          const canvas = canvasRef.current!
-          const ctx = canvas.getContext('2d')!
+        const canvas = canvasRef.current!
+        const ctx = canvas.getContext('2d')!
 
-          ;(function tick() {
-            if (cancelled || scannedRef.current) return
-            if (video.readyState >= video.HAVE_CURRENT_DATA) {
-              canvas.width = video.videoWidth
-              canvas.height = video.videoHeight
-              ctx.drawImage(video, 0, 0)
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-              const code = jsQR(imageData.data, imageData.width, imageData.height)
-              if (code) {
-                scannedRef.current = true
-                onScan(code.data)
-                return
-              }
+        function scan() {
+          if (cancelled || scannedRef.current) return
+          if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+            ctx.drawImage(video, 0, 0)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const code = jsQR(imageData.data, imageData.width, imageData.height)
+            if (code) {
+              scannedRef.current = true
+              onScanRef.current(code.data)
+              return
             }
-            rafRef.current = requestAnimationFrame(tick)
-          })()
+          }
+          timerRef.current = window.setTimeout(scan, 300)
         }
+        scan()
       } catch (err: any) {
         if (!cancelled) setError(err?.toString() || 'Camera access denied')
       }
-    })()
+    }
+    start()
 
     return () => {
       cancelled = true
-      cancelAnimationFrame(rafRef.current)
+      clearTimeout(timerRef.current)
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
     }
-  }, [onScan])
+  }, [])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#030609]/90 backdrop-blur-sm">
@@ -113,6 +97,7 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
                 </div>
               )}
               <div className="absolute bottom-0 inset-x-0 p-3 text-center bg-gradient-to-t from-black/60 to-transparent">
+                <Camera className="w-3.5 h-3.5 inline-block mr-1.5 text-zinc-500" />
                 <span className="text-zinc-400 text-xs font-mono">Point camera at QR code</span>
               </div>
               <canvas ref={canvasRef} className="hidden" />
