@@ -10,37 +10,56 @@ interface QrScannerProps {
 export default function QrScanner({ onScan, onClose }: QrScannerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function decodeFile(file: File) {
-    const img = new Image()
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'attemptBoth',
-        })
-        if (code) {
-          onScan(code.data)
-        } else {
-          setError('No QR code found in photo. Try again.')
+  function decodeImage(file: File) {
+    setLoading(true)
+    setError('')
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0)
+        try {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          })
+          if (code) {
+            onScan(code.data)
+          } else {
+            setError('No QR code found in photo. Try again.')
+          }
+        } catch {
+          setError('Could not read image.')
         }
-      } catch {
-        setError('Could not read image.')
+        setLoading(false)
       }
+      img.onerror = () => {
+        setError('Could not load image. Try taking the photo closer to the QR code.')
+        setLoading(false)
+      }
+      img.src = reader.result as string
     }
-    img.onerror = () => setError('Could not load image.')
-    img.src = URL.createObjectURL(file)
+    reader.onerror = () => {
+      setError('Could not read file.')
+      setLoading(false)
+    }
+    reader.readAsDataURL(file)
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (file) decodeFile(file)
-    // reset so re-selecting same file triggers onChange
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Not an image file. Try again.')
+      return
+    }
+    decodeImage(file)
     e.target.value = ''
   }
 
@@ -61,16 +80,25 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
           <div className="w-16 h-16 rounded-2xl bg-zinc-800/80 border border-zinc-700 flex items-center justify-center">
             <Camera className="w-7 h-7 text-zinc-400" />
           </div>
-          <p className="text-zinc-400 text-sm font-mono text-center leading-relaxed">
-            Take a photo of the QR code<br />
-            <span className="text-zinc-600 text-xs">The native camera will open</span>
-          </p>
-          <button
-            onClick={openCamera}
-            className="w-full py-3.5 rounded-xl bg-[#00f0ff] hover:bg-[#00d4e6] text-[#030609] font-mono font-bold text-sm tracking-wider uppercase shadow-[0_0_20px_rgba(0,240,255,0.3)] transition-all cursor-pointer"
-          >
-            Open Camera
-          </button>
+          {loading ? (
+            <div className="flex flex-col items-center gap-3">
+              <span className="w-8 h-8 border-2 border-zinc-500/30 border-t-[#00f0ff] rounded-full animate-spin" />
+              <p className="text-zinc-400 text-xs font-mono">Scanning photo...</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-zinc-400 text-sm font-mono text-center leading-relaxed">
+                Take a photo of the QR code<br />
+                <span className="text-zinc-600 text-xs">The camera or file picker will open</span>
+              </p>
+              <button
+                onClick={openCamera}
+                className="w-full py-3.5 rounded-xl bg-[#00f0ff] hover:bg-[#00d4e6] text-[#030609] font-mono font-bold text-sm tracking-wider uppercase shadow-[0_0_20px_rgba(0,240,255,0.3)] transition-all cursor-pointer"
+              >
+                Take Photo
+              </button>
+            </>
+          )}
           {error && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 w-full">
               <CameraOff className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -83,7 +111,6 @@ export default function QrScanner({ onScan, onClose }: QrScannerProps) {
           ref={inputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handleFile}
           className="hidden"
         />
